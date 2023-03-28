@@ -58,7 +58,14 @@ enum LINE_SEARCH_TERMINATION_CONDITION
     /// \f$\vert g(x + a \cdot d)^T d\vert \le \beta \cdot \vert g(x)^T d\vert\f$,
     /// where \f$\beta\f$ is the value specified by \ref LBFGSParam::wolfe.
     ///
-    LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE = 3
+    LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE = 3,
+    ///
+    /// Force only, no function value avaliable
+    LBFGS_LINESEARCH_FORCE_ONLY_A = 4,
+    ///
+    /// Linesearch method proposed by Lewis and Overton, for non-smooth and 
+    /// possible non-convex functions.
+    LBFGS_LINESEARCH_LEWIS_OVERTON = 5,
 };
 
 ///
@@ -78,6 +85,13 @@ public:
     ///
     int m;
     ///
+    /// damping parameter, for force only evaulate. Default value is 0.85
+    Scalar damping;
+    ///
+    /// initial step guessing
+    Scalar initial_step;
+    Scalar first_initial_step;
+    ///
     /// Absolute tolerance for convergence test.
     /// This parameter determines the absolute accuracy \f$\epsilon_{abs}\f$
     /// with which the solution is to be found. A minimization terminates when
@@ -86,6 +100,10 @@ public:
     /// \c 1e-5.
     ///
     Scalar epsilon;
+    /// 
+    /// Absolute tolerance for convergence test.
+    /// max g <= this value
+    Scalar epsgmax;
     ///
     /// Relative tolerance for convergence test.
     /// This parameter determines the relative accuracy \f$\epsilon_{rel}\f$
@@ -160,6 +178,43 @@ public:
     ///
     Scalar wolfe;
 
+    /**
+     * A parameter to control the accuracy of the line search routine.
+     *  The default value is 1.0e-4. This parameter should be greater
+     *  than zero and smaller than 1.0.
+     */
+    Scalar f_dec_coeff = 1.0e-4;
+
+    /**
+     * A parameter to control the accuracy of the line search routine.
+     *  The default value is 0.9. If the function and gradient
+     *  evaluations are inexpensive with respect to the cost of the
+     *  iteration (which is sometimes the case when solving very large
+     *  problems) it may be advantageous to set this parameter to a small
+     *  value. A typical small value is 0.1. This parameter should be
+     *  greater than the f_dec_coeff parameter and smaller than 1.0.
+     */
+    Scalar s_curv_coeff = 0.9;
+
+    /**
+     * A parameter to ensure the global convergence for nonconvex functions.
+     *  The default value is 1.0e-6. The parameter performs the so called 
+     *  cautious update for L-BFGS, especially when the convergence is 
+     *  not sufficient. The parameter must be positive but might as well 
+     *  be less than 1.0e-3 in practice.
+     */
+    Scalar cautious_factor = 1.0e-6;
+
+    /**
+     * The machine precision for floating-point values. The default is 1.0e-16. 
+     *  This parameter must be a positive value set by a client program to
+     *  estimate the machine precision.
+     */
+    Scalar machine_prec = 1.0e-16;
+
+    /// max step move, will scale step when max move of x exceed this value
+    Scalar max_step_move = 1e20;
+
 public:
     ///
     /// Constructor for L-BFGS parameters.
@@ -174,12 +229,16 @@ public:
         past           = 0;
         delta          = Scalar(0);
         max_iterations = 0;
-        linesearch     = LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE;
+        // I changed from NocedalWright into LewisOverton because of its high performance and stability
+        linesearch     = LBFGS_LINESEARCH_LEWIS_OVERTON;
         max_linesearch = 20;
         min_step       = Scalar(1e-20);
         max_step       = Scalar(1e+20);
         ftol           = Scalar(1e-4);
         wolfe          = Scalar(0.9);
+        damping        = Scalar(0);
+        initial_step   = Scalar(-1.0);
+        first_initial_step = Scalar(-1.0);
         // clang-format on
     }
 
@@ -202,8 +261,9 @@ public:
             throw std::invalid_argument("'delta' must be non-negative");
         if (max_iterations < 0)
             throw std::invalid_argument("'max_iterations' must be non-negative");
+        // changed by wftao
         if (linesearch < LBFGS_LINESEARCH_BACKTRACKING_ARMIJO ||
-            linesearch > LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE)
+            linesearch > LBFGS_LINESEARCH_LEWIS_OVERTON)
             throw std::invalid_argument("unsupported line search termination condition");
         if (max_linesearch <= 0)
             throw std::invalid_argument("'max_linesearch' must be positive");
@@ -215,6 +275,12 @@ public:
             throw std::invalid_argument("'ftol' must satisfy 0 < ftol < 0.5");
         if (wolfe <= ftol || wolfe >= 1)
             throw std::invalid_argument("'wolfe' must satisfy ftol < wolfe < 1");
+        if (f_dec_coeff >= 1.0 || f_dec_coeff <= 0.0) 
+            throw std::invalid_argument("'f_dec_coeff' must satisfy 0 < f_dec_coeff <1");
+        if (s_curv_coeff <= f_dec_coeff || s_curv_coeff >= 1.0) 
+            throw std::invalid_argument("'s_curv_coeff must satisfy f_dec_coeff < s_curv_coeff < 1");
+        if (cautious_factor < 0)
+            throw std::invalid_argument("'cautious_factor must be positive");
     }
 };
 

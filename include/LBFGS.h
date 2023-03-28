@@ -11,6 +11,8 @@
 #include "LBFGSpp/LineSearchBracketing.h"
 #include "LBFGSpp/LineSearchNocedalWright.h"
 #include "LBFGSpp/LineSearchMoreThuente.h"
+#include "LBFGSpp/LineSearchForceOnlyA.h"
+#include "LBFGSpp/LineSearchLewisOverton.h"
 
 namespace LBFGSpp {
 
@@ -18,7 +20,7 @@ namespace LBFGSpp {
 /// L-BFGS solver for unconstrained numerical optimization
 ///
 template <typename Scalar,
-          template <class> class LineSearch = LineSearchNocedalWright>
+          template <class> class LineSearch = LineSearchLewisOverton>
 class LBFGSSolver
 {
 private:
@@ -90,6 +92,8 @@ public:
         // Evaluate function and compute gradient
         fx = f(x, m_grad);
         m_gnorm = m_grad.norm();
+        Scalar gmax = m_grad.cwiseAbs().maxCoeff();
+
         if (fpast > 0)
             m_fx[0] = fx;
 
@@ -97,7 +101,7 @@ public:
         // std::cout << "f(x0) = " << fx << ", ||grad|| = " << m_gnorm << std::endl << std::endl;
 
         // Early exit if the initial x is already a minimizer
-        if (m_gnorm <= m_param.epsilon || m_gnorm <= m_param.epsilon_rel * x.norm())
+        if (m_gnorm <= m_param.epsilon || m_gnorm <= m_param.epsilon_rel * x.norm() || gmax <= m_param.epsgmax)
         {
             return 1;
         }
@@ -105,7 +109,12 @@ public:
         // Initial direction
         m_drt.noalias() = -m_grad;
         // Initial step size
-        Scalar step = Scalar(1) / m_drt.norm();
+        Scalar step;
+        if (m_param.first_initial_step < 0) {
+            step = Scalar(1) / m_drt.norm();
+        } else 
+            step = m_param.first_initial_step;
+        
 
         // Number of iterations used
         int k = 1;
@@ -124,13 +133,14 @@ public:
 
             // New gradient norm
             m_gnorm = m_grad.norm();
+            gmax = m_grad.cwiseAbs().maxCoeff();
 
             // std::cout << "Iter " << k << " finished line search" << std::endl;
             // std::cout << "   x = " << x.transpose() << std::endl;
             // std::cout << "   f(x) = " << fx << ", ||grad|| = " << m_gnorm << std::endl << std::endl;
 
             // Convergence test -- gradient
-            if (m_gnorm <= m_param.epsilon || m_gnorm <= m_param.epsilon_rel * x.norm())
+            if (m_gnorm <= m_param.epsilon || m_gnorm <= m_param.epsilon_rel * x.norm() || gmax <= m_param.epsgmax)
             {
                 return k;
             }
@@ -158,7 +168,10 @@ public:
             m_bfgs.apply_Hv(m_grad, -Scalar(1), m_drt);
 
             // Reset step = 1.0 as initial guess for the next line search
-            step = Scalar(1);
+            if (m_param.initial_step < 0) {
+                step = Scalar(1);
+            } else 
+                step = m_param.initial_step;
             k++;
         }
 
