@@ -193,6 +193,7 @@ public:
      *  problems) it may be advantageous to set this parameter to a small
      *  value. A typical small value is 0.1. This parameter should be
      *  greater than the f_dec_coeff parameter and smaller than 1.0.
+     * Use a small value like 0.5 for ForceOnly
      */
     Scalar s_curv_coeff = 0.9;
 
